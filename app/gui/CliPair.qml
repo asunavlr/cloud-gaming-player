@@ -13,12 +13,24 @@ Item {
     }
 
     function onFailed(message) {
+        // Cloud Gaming: sem diálogo; o launcher trata pelo código de saída.
+        if (embeddedMode) {
+            console.error(message)
+            Qt.exit(1)
+            return
+        }
+
         stageIndicator.visible = false
         errorDialog.text = message
         errorDialog.open()
     }
 
     function onSuccess(appName) {
+        if (embeddedMode) {
+            Qt.exit(0)
+            return
+        }
+
         stageIndicator.visible = false
         pairCompleteDialog.open()
     }

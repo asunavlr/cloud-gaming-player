@@ -76,6 +76,12 @@ public:
         case Event::ComputerFound:
             if (m_State == StateSeekComputer) {
                 if (event.computer->pairState == NvComputer::PS_PAIRED) {
+                    // Cloud Gaming: para o launcher, já pareado é sucesso.
+                    if (qEnvironmentVariableIsSet("CG_EMBEDDED")) {
+                        m_State = StateComplete;
+                        emit q->success();
+                        return;
+                    }
                     m_State = StateFailure;
                     QString msg = QObject::tr("%1 is already paired").arg(event.computer->name);
                     emit q->failed(msg);
