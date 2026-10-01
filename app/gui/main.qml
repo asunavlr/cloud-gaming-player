@@ -35,6 +35,12 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        // Cloud Gaming: no modo embutido a janela do Moonlight nunca aparece.
+        // Só a janela do jogo (SDL) é mostrada quando o stream começa.
+        if (embeddedMode) {
+            return
+        }
+
         // Show the window according to the user's preferences
         if (SystemProperties.hasDesktopEnvironment) {
             if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_MAXIMIZED) {

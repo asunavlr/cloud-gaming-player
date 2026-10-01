@@ -983,6 +983,14 @@ int main(int argc, char *argv[])
         qputenv("QT_QUICK_CONTROLS_MATERIAL_PRIMARY", "#3F51B5");
     }
 
+    // Cloud Gaming: no modo embutido o Dock mostra o ícone do jogo desde o início.
+    if (qEnvironmentVariableIsSet("CG_GAME_ICON")) {
+        QIcon gameIcon(qEnvironmentVariable("CG_GAME_ICON"));
+        if (!gameIcon.isNull()) {
+            app.setWindowIcon(gameIcon);
+        }
+    }
+
     QQmlApplicationEngine engine;
     QString initialView;
     bool hasGUI = true;
@@ -1034,6 +1042,8 @@ int main(int argc, char *argv[])
 
     if (hasGUI) {
         engine.rootContext()->setContextProperty("initialView", initialView);
+        // Cloud Gaming: aberto pelo nosso launcher, sem nenhuma UI do Moonlight.
+        engine.rootContext()->setContextProperty("embeddedMode", qEnvironmentVariableIsSet("CG_EMBEDDED"));
         engine.rootContext()->setContextProperty("runConfigChecks", commandLineParserResult == GlobalCommandLineParser::NormalStartRequested);
 
         // Load the main.qml file

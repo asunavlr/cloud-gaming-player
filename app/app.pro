@@ -410,7 +410,8 @@ macx {
     SOURCES += \
         streaming/video/ffmpeg-renderers/vt_base.mm \
         streaming/video/ffmpeg-renderers/vt_avsamplelayer.mm \
-        streaming/video/ffmpeg-renderers/vt_metal.mm
+        streaming/video/ffmpeg-renderers/vt_metal.mm \
+        streaming/cgmacfocus.mm
 
     HEADERS += \
         streaming/video/ffmpeg-renderers/vt.h

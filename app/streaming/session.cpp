@@ -22,6 +22,10 @@
 #define ICON_SIZE 64
 #endif
 
+#ifdef Q_OS_DARWIN
+#include "cgmacfocus.h"
+#endif
+
 #define SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER 100
 #define SDL_CODE_GAMECONTROLLER_RUMBLE 101
 #define SDL_CODE_GAMECONTROLLER_RUMBLE_TRIGGERS 102
@@ -639,6 +643,13 @@ bool Session::initialize(QQuickWindow* qtWindow)
         // https://github.com/moonlight-stream/moonlight-qt/issues/1211
         // https://github.com/moonlight-stream/moonlight-qt/issues/1218
         SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, shouldUseFullScreenSpaces ? "1" : "0");
+    }
+
+    // Cloud Gaming: prende o mouse reposicionando o cursor em vez de desligá-lo no
+    // sistema inteiro. Assim o cursor volta a funcionar no Mission Control e em
+    // outras telas, que não geram evento de perda de foco.
+    if (qEnvironmentVariableIsSet("CG_EMBEDDED")) {
+        SDL_SetHint(SDL_HINT_MOUSE_RELATIVE_MODE_WARP, "1");
     }
 #endif
 
@@ -1845,6 +1856,10 @@ void Session::exec()
 #else
     std::string windowName = QString(m_Computer->name + " - Moonlight").toStdString();
 #endif
+    // Cloud Gaming: a janela leva o nome do jogo, não o do Moonlight.
+    if (qEnvironmentVariableIsSet("CG_GAME_NAME")) {
+        windowName = qEnvironmentVariable("CG_GAME_NAME").toStdString();
+    }
 
     m_Window = SDL_CreateWindow(windowName.c_str(),
                                 x,
@@ -1890,6 +1905,22 @@ void Session::exec()
                                                                   32,
                                                                   4 * svgImage.width(),
                                                                   SDL_PIXELFORMAT_RGBA32);
+    // Cloud Gaming: ícone do jogo (no Mac também vira o ícone do Dock).
+    QImage gameIcon;
+    if (qEnvironmentVariableIsSet("CG_GAME_ICON") && gameIcon.load(qEnvironmentVariable("CG_GAME_ICON"))) {
+        gameIcon = gameIcon.convertToFormat(QImage::Format_RGBA8888);
+        SDL_Surface* gameIconSurface = SDL_CreateRGBSurfaceWithFormatFrom((void*)gameIcon.constBits(),
+                                                                          gameIcon.width(),
+                                                                          gameIcon.height(),
+                                                                          32,
+                                                                          gameIcon.bytesPerLine(),
+                                                                          SDL_PIXELFORMAT_RGBA32);
+        if (gameIconSurface != nullptr) {
+            SDL_SetWindowIcon(m_Window, gameIconSurface);
+            SDL_FreeSurface(gameIconSurface);
+        }
+    }
+
 #ifndef Q_OS_DARWIN
     // Other platforms seem to preserve our Qt icon when creating a new window.
     if (iconSurface != nullptr) {
@@ -1902,6 +1933,19 @@ void Session::exec()
     // Update the window display mode based on our current monitor
     // for if/when we enter full-screen mode.
     updateOptimalWindowDisplayMode();
+
+    // Cloud Gaming: aberto pelo launcher, o player nasce em segundo plano (sem janela Qt).
+    // Traz o app e a janela do jogo para a frente antes da tela cheia, que o macOS
+    // não aplica a apps inativos.
+    if (qEnvironmentVariableIsSet("CG_EMBEDDED")) {
+        SDL_RaiseWindow(m_Window);
+    }
+
+#ifdef Q_OS_DARWIN
+    if (qEnvironmentVariableIsSet("CG_EMBEDDED")) {
+        CGMacFocus_Install(m_Window);
+    }
+#endif
 
     // Enter full screen if requested
     if (m_IsFullScreen) {
@@ -1962,8 +2006,26 @@ void Session::exec()
 
     // Hijack this thread to be the SDL main thread. We have to do this
     // because we want to suspend all Qt processing until the stream is over.
+    // Cloud Gaming: o mouse fica preso enquanto o jogo está de fato na frente e solto quando não
+    // está (outro app, Mission Control, outro Space), sem clique, como um jogo instalado.
+    // Verificamos o estado real periodicamente, porque os eventos de foco da abertura são
+    // descartados durante a inicialização do vídeo e a animação de tela cheia gera avisos falsos.
+    bool cgAutoCapture = m_IsFullScreen && qEnvironmentVariableIsSet("CG_EMBEDDED");
+    Uint32 cgNextCaptureCheck = 0;
+
     SDL_Event event;
     for (;;) {
+#ifdef Q_OS_DARWIN
+        if (cgAutoCapture && SDL_TICKS_PASSED(SDL_GetTicks(), cgNextCaptureCheck)) {
+            cgNextCaptureCheck = SDL_GetTicks() + 300;
+            bool front = CGMacFocus_GameIsFrontmost();
+            if (front != m_InputHandler->isCaptureActive()) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "CG: %s o mouse", front ? "prendendo" : "soltando");
+                m_InputHandler->setCaptureActive(front);
+            }
+        }
+#endif
+
 #if SDL_VERSION_ATLEAST(2, 0, 18) && !defined(STEAM_LINK)
         // SDL 2.0.18 has a proper wait event implementation that uses platform
         // support to block on events rather than polling on Windows, macOS, X11,
@@ -2007,6 +2069,13 @@ void Session::exec()
                 if (m_VideoDecoder != nullptr) {
                     m_VideoDecoder->renderFrameOnMainThread();
                 }
+                break;
+            #ifdef Q_OS_DARWIN
+            case SDL_CODE_CG_RELEASE_CAPTURE:
+#else
+            case 200:
+#endif
+                m_InputHandler->setCaptureActive(false);
                 break;
             case SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER:
                 m_FlushingWindowEventsRef--;
@@ -2055,9 +2124,13 @@ void Session::exec()
                     m_AudioMuted = false;
                 }
                 m_InputHandler->notifyFocusGained();
+                cgNextCaptureCheck = 0;
                 break;
             case SDL_WINDOWEVENT_LEAVE:
                 m_InputHandler->notifyMouseLeave();
+                break;
+            case SDL_WINDOWEVENT_ENTER:
+                cgNextCaptureCheck = 0;
                 break;
             }
 
@@ -2364,6 +2437,9 @@ DispatchDeferredCleanup:
 
     // This must be called after the decoder is deleted, because
     // the renderer may want to interact with the window
+#ifdef Q_OS_DARWIN
+    CGMacFocus_Uninstall();
+#endif
     SDL_DestroyWindow(m_Window);
 
     if (iconSurface != nullptr) {

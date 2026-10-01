@@ -23,12 +23,27 @@ Item {
     }
 
     function onLaunchFailed(message) {
+        // Cloud Gaming: sem diálogo; o launcher trata pelo código de saída.
+        if (embeddedMode) {
+            console.error(message)
+            Qt.exit(1)
+            return
+        }
+
         errorDialog.text = message
         errorDialog.open()
         console.error(message)
     }
 
     function onAppQuitRequired(appName) {
+        // Cloud Gaming: a máquina é nossa e o agent garante uma sessão por vez,
+        // então outro app aberto é sobra de uma sessão anterior.
+        if (embeddedMode) {
+            quitAppDialog.appName = appName
+            quitAppDialog.quitApp()
+            return
+        }
+
         quitAppDialog.appName = appName
         quitAppDialog.open()
     }

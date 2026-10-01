@@ -56,7 +56,7 @@ Item {
         stackView.replace(stackView.currentItem, component.createObject(stackView, {"appName": appName}), StackView.Immediate)
 
         // Show the Qt window again to show quit segue
-        window.visible = true
+        window.visible = !embeddedMode
     }
 
     function sessionFinished(portTestResult)
@@ -76,6 +76,11 @@ Item {
         if (quitAfter && !streamSegueErrorDialog.text) {
             // If this was a CLI launch without errors, exit now
             Qt.quit()
+        }
+        else if (embeddedMode) {
+            // Cloud Gaming: sem diálogo; o launcher trata pelo código de saída.
+            console.error(streamSegueErrorDialog.text)
+            Qt.exit(2)
         }
         else {
             // Show the Qt window again after streaming
