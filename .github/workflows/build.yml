@@ -3,11 +3,10 @@ name: Build
 permissions:
   contents: read
 
+# Cloud Gaming: o build completo do Moonlight (Linux, Steam Link, Windows ARM, macOS) só
+# roda manualmente. O player do launcher é gerado por cloud-gaming-windows.yml.
 on:
-  push:
-  pull_request:
-    branches:
-      - master
+  workflow_dispatch:
 
 concurrency:
   group: build-${{ github.ref }}

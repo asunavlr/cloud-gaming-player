@@ -1,0 +1,63 @@
+---
+# Player do Cloud Gaming para Windows x64 (modo embutido, usado pelo launcher).
+# Publica um zip no release "player-windows-latest" para o build do launcher baixar.
+name: Cloud Gaming - Player Windows
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [cloud-gaming]
+  workflow_dispatch:
+
+concurrency:
+  group: cloud-gaming-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2025
+    env:
+      QT_VERSION: 6.11.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Dependências pré-compiladas
+        run: powershell ./setup-deps.ps1
+
+      - name: Instalar Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          cache: true
+          set-env: false
+          add-tools-to-path: false
+          tools: tools_qtcreator_gui
+          version: ${{ env.QT_VERSION }}
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@073e34d7c2ab4ae6961ed7cca690b3abd5ba5a7e'
+
+      - name: Compilar x64
+        shell: cmd
+        run: |
+          set "PATH=%QT_PATH%;%PATH%"
+          scripts\build-arch.bat Release x64
+        env:
+          QT_PATH: ${{ runner.workspace }}\Qt\${{ env.QT_VERSION }}\msvc2022_64\bin
+
+      - name: Empacotar
+        shell: pwsh
+        run: Compress-Archive -Path build/deploy-x64-release/* -DestinationPath player-windows-x64.zip
+
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete player-windows-latest --yes --cleanup-tag || true
+          gh release create player-windows-latest player-windows-x64.zip \
+            --title "Player Windows x64 (${GITHUB_SHA::7})" \
+            --notes "Gerado automaticamente a partir de ${GITHUB_SHA}." \
+            --target "${GITHUB_SHA}"
